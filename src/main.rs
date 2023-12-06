@@ -1,3 +1,4 @@
+use dotenv_codegen::dotenv;
 use std::{
     fs,
     io::{prelude::*, BufReader},
@@ -9,9 +10,27 @@ use std::{
 use memoir_api::ThreadPool;
 
 fn main() {
-    let localhost: &str = "127.0.0.1:7878";
-    let listener: TcpListener = TcpListener::bind(localhost).unwrap();
-    let pool = ThreadPool::new(4);
+    let memoir_address = dotenv!("MEMOIR_ADDRESS");
+    let memoir_port = dotenv!("MEMOIR_PORT");
+
+    let memoir_pool_size: usize = match dotenv!("MEMOIR_POOL_SIZE").parse() {
+        Ok(p) => p,
+        Err(_) => {
+            println!(
+                "Non-numeric value issued for MEMOIR_POOL_SIZE env. variable. Using default value."
+            );
+            4
+        }
+    };
+
+    println!("Using {} as pool size.", memoir_pool_size);
+
+    let application_address = format!("{memoir_address}:{memoir_port}");
+
+    println!("Starting the server at {}.", application_address);
+
+    let listener: TcpListener = TcpListener::bind(application_address).unwrap();
+    let pool = ThreadPool::new(memoir_pool_size);
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
@@ -30,7 +49,19 @@ fn handle_connection(mut stream: TcpStream) {
     //     .take_while(|line| !line.is_empty())
     //     .collect();
 
-    let request_line = buf_reader.lines().next().unwrap().unwrap();
+    let request_line = match buf_reader.lines().next() {
+        Some(Ok(line)) => line,
+        Some(Err(err)) => {
+            println!("Error parsing request buffer: {}.", err);
+            "/".to_string()
+        }
+        None => {
+            println!("No value found while parsing request buffer, assuming root.");
+            "/".to_string()
+        }
+    };
+
+    // let request_line = request_line.unwrap();
     let request_line = request_line.as_str();
 
     let (response_code, response_phrase, filename) = match request_line {
